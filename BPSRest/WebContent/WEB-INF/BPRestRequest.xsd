@@ -1,0 +1,12 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+          <!-- XML Schema Generated from XML Document on Thu Nov 10 2016 09:50:42 GMT+0000 (GMT Standard Time) -->
+          <!-- with XmlGrid.net Free Online Service http://xmlgrid.net -->
+       <xs:element name="BPRestInput">
+              <xs:complexType>
+                     <xs:sequence>
+                            <xs:element name="transactionRef" type="xs:string"></xs:element>
+                            <xs:element name="transactionNumber" type="xs:string"></xs:element>
+                        </xs:sequence>
+                 </xs:complexType>
+          </xs:element>
+   </xs:schema>

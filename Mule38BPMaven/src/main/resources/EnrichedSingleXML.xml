@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+ <batch>
+  <TransactionRef>
+            TR1
+        </TransactionRef>
+  <TransactionType>
+          Queue
+        </TransactionType>
+  <TransactionNumber>
+           TN01
+        </TransactionNumber>
+  <FirstName>
+           Nivi
+        </FirstName>
+  <LastName>
+          Kundem
+        </LastName>
+  <Amount>
+            10
+        </Amount>
+ </batch>

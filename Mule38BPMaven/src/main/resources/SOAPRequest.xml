@@ -1,0 +1,19 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:bps="http://www.nivi.com/BPSWS/">
+    <soapenv:Body>
+      <bps:sendBPSDetails>
+         <BPLoad>
+            <DateGenerated>?</DateGenerated>
+            <BPLoadList>
+               <BP>
+                  <TransactionRef>a</TransactionRef>
+                  <TransactionType>b</TransactionType>
+                  <TransactionNumber>c</TransactionNumber>
+                  <FirstName>d</FirstName>
+                  <LastName>e</LastName>
+                  <Amount>f</Amount>
+               </BP>
+            </BPLoadList>
+         </BPLoad>
+      </bps:sendBPSDetails>
+   </soapenv:Body>
+</soapenv:Envelope>

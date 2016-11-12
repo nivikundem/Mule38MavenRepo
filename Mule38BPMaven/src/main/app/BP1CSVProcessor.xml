@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper"
+	xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+
+
+    <flow name="BP1CSVProcessorFlow" processingStrategy="synchronous">
+	
+        <file:inbound-endpoint path="${BP.folder.csv.in}" moveToPattern="#[message.inboundProperties.originalFilename].processed" moveToDirectory="${BP.folder.csv.processed}" connector-ref="CSVInput" responseTimeout="10000" metadata:id="c3d179e2-9eec-48a9-a2f2-73ca7f97fe65" doc:name="File">
+            <file:filename-wildcard-filter pattern="*.csv,*.CSV"/>
+        </file:inbound-endpoint>
+		
+		<message-properties-transformer scope="session" doc:name="CommonValues">		
+			<add-message-property key="bpList" value="#[new ArrayList()]"/>
+			<add-message-property key="iFileName" value="#[message.inboundProperties.originalFilename]"/>
+			<add-message-property key="muleId" value="#[message:id]"/>	
+			<add-message-property key="hostserver" value="${General.hostserver}"/>					
+			<add-message-property key="enrichedXML" value="''"/>		
+			<add-message-property key="bp" value="''"/>			
+		</message-properties-transformer>
+
+		
+        <enricher target="#[sessionVars.bpList]" source="#[payload]" doc:name="PojoList" >
+            <dw:transform-message metadata:id="c4fc1537-6bcd-4a20-b492-84ac78df869b" doc:name="CSVToJava">
+                <dw:input-payload doc:sample="BP1.csv" mimeType="application/csv"/>
+                <dw:set-payload><![CDATA[%dw 1.0
+				%output application/java
+				---
+				payload map ((payload01 , indexOfPayload01) -> {
+					amount: payload01.Amount as :number,
+					firstName: payload01.FirstName,
+					lastName: payload01.LastName,
+					transactionNumber: payload01.TransactionNumber,
+					transactionRef: payload01.TransactionRef,
+					transactionType: payload01.TransactionType
+				} as :object {
+					class : "uk.co.bp.bean.BPCSVPojo"
+				})
+				]]></dw:set-payload>
+            </dw:transform-message>
+
+        </enricher>
+        
+                
+		<db:insert config-ref="ESBDBDatabase" doc:name="InsertBatch">
+		<db:parameterized-query><![CDATA[insert into bp.bpbatch
+		(batchName,Status,Servername,mmid, noOfTransactions)
+		values(#[sessionVars.iFileName],'Created',#[sessionVars.hostserver],#[sessionVars.muleId],#[sessionVars.bpList.size()] )]]>
+		</db:parameterized-query>
+		</db:insert>
+        	
+        <foreach doc:name="For Each csv pojo" collection="#[sessionVars.bpList]">
+        
+            <message-properties-transformer scope="session" doc:name="bp">						
+			<add-message-property key="bp" value="#[payload]"/>			
+		    </message-properties-transformer>
+        
+        	 <component class="uk.co.bp.component.EnrichCSV" doc:name="EnrichCSV"/>
+    
+        	    <enricher target="#[sessionVars.enrichedXML]" source="#[payload]" doc:name="Pojo" >
+                <dw:transform-message metadata:id="b695a71e-ab94-47ed-9e67-2c7f975f6f79" doc:name="POJOtoXML">
+                    <dw:input-payload doc:sample="sample_data\BPCSVPojo.dwl" mimeType="application/java"/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+					%output application/xml
+					---
+					{
+						batch: {
+							TransactionRef: payload.transactionRef,
+							TransactionType: payload.transactionType,
+							TransactionNumber: payload.transactionNumber,
+							FirstName: payload.firstName,
+							LastName: payload.lastName,
+							Amount: payload.amount
+						}
+					}]]></dw:set-payload>
+                </dw:transform-message>
+ 
+		        </enricher>
+		        <set-payload doc:name="Set Payload" value="#[sessionVars.enrichedXML]"/>
+		        <object-to-string-transformer doc:name="Object to String"/>
+				
+		      
+		      		<db:insert config-ref="ESBDBDatabase" doc:name="Insert_xml">
+					<db:parameterized-query><![CDATA[insert into bp.bptransactions
+					(batchName,Status,Servername,Message, messageRef,transactionType,transactionRef)
+					values(#[sessionVars.iFileName],'New',#[sessionVars.hostserver],#[payload],#[flowVars.counter],#[xpath3('string(/batch/TransactionType)',payload)], #[xpath3('string(/batch/TransactionRef)',payload)])]]></db:parameterized-query>
+					</db:insert>
+		      
+      
+      </foreach>
+      
+      
+      
+         <catch-exception-strategy doc:name="BP1CSVProcessor Catch Exception Strategy">
+		  <message-properties-transformer scope="session" doc:name="Message Properties">
+		  <add-message-property key="errorprocess" value="#['BP']"/>
+		  <add-message-property key="errormessage" value="#['Failed to convert csv to xml :: sessionVars.iFileName']"/>
+		  <add-message-property key="erroradditionaltext" value="#['Failed to convert csv to xml  ::: sessionVars.iFileName']"/>
+		  </message-properties-transformer>
+		  <vm:outbound-endpoint exchange-pattern="request-response" path="BP.queue.VMError" doc:name="VMError"/>		  
+		  </catch-exception-strategy>      
+     
+    </flow>
+</mule>

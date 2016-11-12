@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ws="http://www.mulesoft.org/schema/mule/ws"
+	xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml"
+	xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:ftp="http://www.mulesoft.org/schema/mule/ee/ftp"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper"
+	xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/ftp http://www.mulesoft.org/schema/mule/ee/ftp/current/mule-ftp-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+
+
+
+		<flow name="BP2MessageProcessorFlow" processingStrategy="synchronous">
+
+			<poll doc:name="Poll">
+			<fixed-frequency-scheduler frequency="${BP.sourceDbPollingFreq}"/>
+			<db:select config-ref="ESBDBDatabase" doc:name="Get if any to do" target="payload">
+			<db:parameterized-query><![CDATA[SELECT bptransactionsID
+			FROM BP.bptransactions MSG1
+			where MSG1.Status in ('New','Retry')
+			and mmid is null
+			limit 1
+			]]></db:parameterized-query>
+			</db:select>
+			</poll>
+
+			<expression-filter expression="#[payload.size()&gt;0]" doc:name="Only if rows"/>
+
+			<message-properties-transformer scope="session" doc:name="Mule Msg ID">
+			<add-message-property key="mmid" value="#[message:id]"/>	 
+			<add-message-property key="dbmsg" value="#[new ArrayList()]"/> 
+			</message-properties-transformer>
+
+
+			<db:update config-ref="ESBDBDatabase" doc:name="Update ready">
+			<db:parameterized-query><![CDATA[update  BP.bptransactions
+			set Status='Ready', mmid = #[sessionVars.mmid]
+			,DateUpdated=CURRENT_TIMESTAMP
+			where mmid is null
+			limit 10
+			]]></db:parameterized-query>
+			</db:update>
+
+
+			<enricher target="#[sessionVars.dbmsg]" doc:name="Message Enricher" >
+			<db:select config-ref="ESBDBDatabase" doc:name="Get Records">
+			<db:parameterized-query><![CDATA[SELECT  bptransactionsID, upper(transactionType) target,  Message 
+			FROM BP.bptransactions MSG1
+			where mmid = #[sessionVars.mmid]
+			limit 10
+			]]></db:parameterized-query>
+			</db:select>
+			</enricher>
+
+
+			<foreach collection="#[sessionVars.dbmsg]" doc:name="For Each Messages">     
+
+				<message-properties-transformer scope="session" doc:name="Message Properties">    
+				<add-message-property key="targetType" value="#[payload.target]"/>
+				<add-message-property key="xmlMessage" value="#[payload.Message]"/>
+				<add-message-property key="transactionID" value="#[payload.bptransactionsID]"/>
+				</message-properties-transformer>
+
+
+				<flow-ref name="BP2MessageDistributor" doc:name="BP2MessageDistributor"/>
+				
+				<db:update config-ref="ESBDBDatabase" doc:name="Update Processed">
+                <db:parameterized-query><![CDATA[update BP.bptransactions
+				 set Status='Processed'
+				,DateUpdated=CURRENT_TIMESTAMP
+				where  bptransactionsID = #[sessionVars.transactionID]]]></db:parameterized-query>
+
+				</db:update>
+
+			</foreach>
+
+
+
+
+
+			<catch-exception-strategy doc:name="BP2MessageProcessorFlow Catch Exception Strategy">
+			<message-properties-transformer scope="session" doc:name="Message Properties">
+			<add-message-property key="errorprocess" value="#['BP']"/>
+			<add-message-property key="errormessage" value="#['Failed MessageProcessor']"/>
+			<add-message-property key="erroradditionaltext" value="#['Failed MessageProcessor  ::: sessionVars.mmid']"/>
+			</message-properties-transformer>
+			<vm:outbound-endpoint exchange-pattern="request-response" path="BP.queue.VMError" doc:name="VMError"/>		  
+			</catch-exception-strategy>      
+
+
+		</flow>
+
+
+		<flow name="BP2MessageDistributor" processingStrategy="synchronous">
+
+			<message-properties-transformer scope="session" doc:name="oFileName">   
+			<add-message-property key="oFileName" value="#[function:datestamp:yyyyMMddHHmm]"/>
+			</message-properties-transformer>
+			<set-payload value="#[sessionVars.xmlMessage]" doc:name="Set Payload"/>
+
+			<choice doc:name="Choice">
+			
+				<when expression="#[sessionVars['targetType']  == 'FOLDER' || sessionVars['targetType']  == 'FTP']">
+					<flow-ref name="FTPTransfer" doc:name="FTPTransfer"/>
+				</when>
+				 <when expression="#[sessionVars['targetType']  == 'QUEUE']">					
+					<flow-ref name="SendToActiveMQ" doc:name="SendToActiveMQ"/>
+				</when>
+				<when expression="#[sessionVars['targetType']  == 'EXCEL']">  					
+					<flow-ref name="XmlTOXls" doc:name="XmlTOXls"/> 
+				</when>
+				<when expression="#[sessionVars['targetType']  == 'SOAP']">  					
+					<flow-ref name="XMLtoSOAPXML" doc:name="XMLtoSOAPXML"/> 
+				</when>
+				<when expression="#[sessionVars['targetType']  == 'REST']">  					
+					<flow-ref name="XMLtoRESTXML" doc:name="XMLtoRESTXML"/> 
+				</when> 
+				<otherwise>
+					<logger message="targetType::  #[sessionVars.targetType]" level="INFO" doc:name="Logger"/>
+				</otherwise>
+
+			</choice>
+
+
+			<catch-exception-strategy doc:name="BP2MessageDistributor Catch Exception Strategy">
+			<message-properties-transformer scope="session" doc:name="Message Properties">
+			<add-message-property key="errorprocess" value="#['BP']"/>
+			<add-message-property key="errormessage" value="#['Failed MessageDistributor']"/>
+			<add-message-property key="erroradditionaltext" value="#['Failed MessageDistributor  ::: sessionVars.xmlMessage']"/>
+			</message-properties-transformer>
+			<vm:outbound-endpoint exchange-pattern="request-response" path="BP.queue.VMError" doc:name="VMError"/>		  
+			</catch-exception-strategy>      
+
+		</flow>
+		
+		
+		
+		
+    
+    
+</mule>

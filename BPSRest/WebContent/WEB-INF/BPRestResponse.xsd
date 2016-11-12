@@ -1,0 +1,14 @@
+ <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+         <!-- XML Schema Generated from XML Document on Wed Nov 09 2016 16:32:44 GMT+0000 (GMT Standard Time) -->
+         <!-- with XmlGrid.net Free Online Service http://xmlgrid.net -->
+         <xs:element name="bp">
+               <xs:complexType>
+                     <xs:sequence>
+                           <xs:element name="trasactionNumber" type="xs:string"></xs:element>
+                           <xs:element name="transactionReference" type="xs:string"></xs:element>
+                           <xs:element name="firstName" type="xs:string"></xs:element>
+                           <xs:element name="amount" type="xs:int"></xs:element>
+                     </xs:sequence>
+               </xs:complexType>
+         </xs:element>
+ </xs:schema>

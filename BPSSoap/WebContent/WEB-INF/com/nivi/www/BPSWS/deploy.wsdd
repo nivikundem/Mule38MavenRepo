@@ -1,0 +1,58 @@
+<!-- Use this file to deploy some handlers/chains and services      -->
+<!-- Two ways to do this:                                           -->
+<!--   java org.apache.axis.client.AdminClient deploy.wsdd          -->
+<!--      after the axis server is running                          -->
+<!-- or                                                             -->
+<!--   java org.apache.axis.utils.Admin client|server deploy.wsdd   -->
+<!--      from the same directory that the Axis engine runs         -->
+
+<deployment
+    xmlns="http://xml.apache.org/axis/wsdd/"
+    xmlns:java="http://xml.apache.org/axis/wsdd/providers/java">
+
+  <!-- Services from BPSWS WSDL service -->
+
+  <service name="BPSPort" provider="java:RPC" style="wrapped" use="literal">
+      <parameter name="wsdlTargetNamespace" value="http://www.nivi.com/BPSWS/"/>
+      <parameter name="wsdlServiceElement" value="BPSWS"/>
+      <parameter name="schemaUnqualified" value="http://www.nivi.com/BPSWS/"/>
+      <parameter name="wsdlServicePort" value="BPSPort"/>
+      <parameter name="className" value="com.nivi.www.BPSWS.BPSSOAPSkeleton"/>
+      <parameter name="wsdlPortType" value="BPSWS"/>
+      <parameter name="typeMappingVersion" value="1.2"/>
+      <parameter name="allowedMethods" value="*"/>
+
+      <typeMapping
+        xmlns:ns="http://www.nivi.com/BPSWS/"
+        qname="ns:bpsDetailsType"
+        type="java:com.nivi.www.BPSWS.BpsDetailsType"
+        serializer="org.apache.axis.encoding.ser.BeanSerializerFactory"
+        deserializer="org.apache.axis.encoding.ser.BeanDeserializerFactory"
+        encodingStyle=""
+      />
+      <typeMapping
+        xmlns:ns="http://www.nivi.com/BPSWS/"
+        qname="ns:bpLoadType"
+        type="java:com.nivi.www.BPSWS.BpLoadType"
+        serializer="org.apache.axis.encoding.ser.BeanSerializerFactory"
+        deserializer="org.apache.axis.encoding.ser.BeanDeserializerFactory"
+        encodingStyle=""
+      />
+      <typeMapping
+        xmlns:ns="http://www.nivi.com/BPSWS/"
+        qname="ns:bpType"
+        type="java:com.nivi.www.BPSWS.BpType"
+        serializer="org.apache.axis.encoding.ser.BeanSerializerFactory"
+        deserializer="org.apache.axis.encoding.ser.BeanDeserializerFactory"
+        encodingStyle=""
+      />
+      <typeMapping
+        xmlns:ns="http://www.nivi.com/BPSWS/"
+        qname="ns:bpLoadListType"
+        type="java:com.nivi.www.BPSWS.BpLoadListType"
+        serializer="org.apache.axis.encoding.ser.BeanSerializerFactory"
+        deserializer="org.apache.axis.encoding.ser.BeanDeserializerFactory"
+        encodingStyle=""
+      />
+  </service>
+</deployment>

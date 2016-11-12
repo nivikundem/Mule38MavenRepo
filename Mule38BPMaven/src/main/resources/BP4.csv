@@ -1,0 +1,5 @@
+TransactionRef,TransactionType,TransactionNumber,FirstName,LastName,Amount
+TR1,Queue,TN1,N1,K1,10
+TR2,FTP,TN2,N2,K2,11
+TR4,REST,TN4,N4,K4,13
+TR5,SOAP,TN5,N5,K5,14

@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:ws="http://www.mulesoft.org/schema/mule/ws"
+	xmlns:ftp="http://www.mulesoft.org/schema/mule/ee/ftp"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+	xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/ws http://www.mulesoft.org/schema/mule/ws/current/mule-ws.xsd
+http://www.mulesoft.org/schema/mule/ee/ftp http://www.mulesoft.org/schema/mule/ee/ftp/current/mule-ftp-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+
+
+
+
+
+    
+
+		<sub-flow name="XmlToJSON">
+		
+			<dw:transform-message metadata:id="5cdf62a8-43bd-4090-85f3-301251627555" doc:name="XMLtoJSON">
+			<dw:input-payload doc:sample="EnrichedSingleXML.xml" mimeType="application/xml"/>
+			<dw:input-session-variable mimeType="application/xml" variableName="xmlMessage"/>
+			<dw:set-payload><![CDATA[%dw 1.0
+			%output application/json
+			---
+			batch: {
+				TransactionRef: payload.batch.TransactionRef,
+				TransactionType: payload.batch.TransactionType,
+				TransactionNumber: payload.batch.TransactionNumber,
+				FirstName: payload.batch.FirstName,
+				LastName: payload.batch.LastName,
+				Amount: payload.batch.Amount
+			}
+			]]></dw:set-payload>
+			</dw:transform-message>
+			<file:outbound-endpoint path="${BP.folder.json.in}" outputPattern="#[sessionVars.transactionID+'_'+sessionVars.oFileName].json" responseTimeout="10000" doc:name="JsonOutFile"/>
+
+		</sub-flow>
+		
+
+
+
+		<flow name="FTPTransfer" processingStrategy="synchronous">
+			<file:inbound-endpoint path="${BP.folder.json.in}" responseTimeout="10000" doc:name="FTPIn" connector-ref="CSVInput" moveToPattern="#[message.inboundProperties.originalFilename].processed" moveToDirectory="${BP.folder.json.processed}"/>
+			<ftp:outbound-endpoint host="${BP.ftp.host}" port="${BP.ftp.port}" user="${BP.ftp.user}" password="${BP.ftp.password}" responseTimeout="10000" doc:name="FTP" connector-ref="FTP"/>
+
+			<catch-exception-strategy doc:name="FTPTransfer Catch Exception Strategy">
+			<message-properties-transformer scope="session" doc:name="Message Properties">
+			<add-message-property key="errorprocess" value="#['BP']"/>
+			<add-message-property key="errormessage" value="#['Failed FTP transfer']"/>
+			<add-message-property key="erroradditionaltext" value="#['Failed FTP transfer  ::: sessionVars.xmlMessage']"/>
+			</message-properties-transformer>
+			<vm:outbound-endpoint exchange-pattern="request-response" path="BP.queue.VMError" doc:name="VMError"/>		  
+			</catch-exception-strategy>   
+		</flow>
+
+
+		<sub-flow name="SendToActiveMQ">
+        <jms:outbound-endpoint queue="${JMTOutbound.bpqueue}" connector-ref="BP_JMS_Q" doc:name="JMSQ"/>
+		</sub-flow>
+
+
+		<sub-flow name="XmlTOXls">
+		
+			<dw:transform-message metadata:id="795b68c8-a021-4465-9110-49ec37bf4f1d" doc:name="XMLtoCSV">
+			<dw:input-payload doc:sample="EnrichedSingleXML.xml" mimeType="application/xml"/>
+			<dw:set-payload><![CDATA[%dw 1.0
+			%output application/csv
+			---
+			[{
+			TransactionRef: payload.batch.TransactionRef,
+			TransactionType: payload.batch.TransactionType,
+			TransactionNumber: payload.batch.TransactionNumber,
+			FirstName: payload.batch.FirstName,
+			LastName: payload.batch.LastName,
+			Amount: payload.batch.Amount as :string
+			}]]]></dw:set-payload>
+			</dw:transform-message>
+
+			<file:outbound-endpoint path="${BP.folder.excel.in}" connector-ref="CSVInput" responseTimeout="10000" doc:name="ExcelOutFile" outputPattern="#[sessionVars.transactionID+'_'+sessionVars.oFileName].csv"/> 
+
+		</sub-flow>
+
+
+
+
+		<sub-flow name="XMLtoSOAPXML">
+
+			<dw:transform-message metadata:id="3ce1dcc9-c23c-45dc-a8b1-41efd8aa4738" doc:name="XmlToSoapXML">
+			<dw:input-payload doc:sample="EnrichedSingleXML.xml" mimeType="application/xml"/>
+			<dw:set-payload><![CDATA[%dw 1.0
+			%output application/xml
+			%namespace ns0 http://www.nivi.com/BPSWS/
+			---
+			{
+			ns0#sendBPSDetails: {
+			BPLoad: {
+			BPLoadList: {
+			BP: {
+			TransactionRef: payload.batch.TransactionRef,
+			TransactionType: payload.batch.TransactionType,
+			TransactionNumber: payload.batch.TransactionNumber,
+			FirstName: payload.batch.FirstName,
+			LastName: payload.batch.LastName,
+			Amount: payload.batch.Amount as :string
+			}
+			}
+			}
+			}
+			}]]></dw:set-payload>
+			</dw:transform-message>
+
+
+			<ws:consumer config-ref="Web_Service_Consumer" operation="sendBPSDetails" doc:name="Web Service Consumer"/>
+			<mulexml:dom-to-xml-transformer doc:name="DOM to XML"/>      
+			<logger message="#[payload]" level="INFO" doc:name="Logger"/>
+		</sub-flow>
+
+
+
+
+		<sub-flow name="XMLtoRESTXML">
+			<http:request config-ref="HTTP_Request_Configuration" path="${BP.Rest.path}" method="GET" doc:name="InvokingREST"/>
+			<logger message="After polling from REST Webservice : #[payload:java.lang.String]" level="INFO" doc:name="RESTResponse"/>
+		</sub-flow>
+
+		<flow name="SendEmail" processingStrategy="synchronous">
+			<file:inbound-endpoint path="${BP.folder.excel.in}" connector-ref="CSVInput" responseTimeout="10000" doc:name="ExcelFileIn" moveToDirectory="${BP.folder.excel.processed}"/>
+			<message-properties-transformer scope="session" doc:name="CommonValues">			
+			<add-message-property key="xlFileName" value="#[message.inboundProperties.originalFilename]"/>
+			<add-message-property key="subject" value="Email sent by MULE ESB"/>
+			</message-properties-transformer>
+			<file:file-to-string-transformer doc:name="File to String"/>  
+			<set-attachment attachmentName="#[sessionVars.xlFileName]" value="#[payload]" contentType="application/csv" doc:name="SetAttachment"/>
+			<set-payload value="#['This email sent by SMTP component']" doc:name="Set Payload"/>
+			<smtp:outbound-endpoint host="${Email.smtpServerHost}" port="${Email.smtpServerPort}" user="${Email.sendFrom}" password="${Email.password}" connector-ref="Gmail" to="${Email.sendTo}" from="${Email.sendFrom}" subject="#[sessionVars.subject]" responseTimeout="10000"  mimeType="text/plain" doc:name="SMTP"/>
+
+			<catch-exception-strategy doc:name="FTPTransfer Catch Exception Strategy">
+			<message-properties-transformer scope="session" doc:name="Message Properties">
+			<add-message-property key="errorprocess" value="#['BP']"/>
+			<add-message-property key="errormessage" value="#['Failed SMTP']"/>
+			<add-message-property key="erroradditionaltext" value="#['Failed SMTP ::: sessionVars.xmlMessage']"/>
+			</message-properties-transformer>
+			<vm:outbound-endpoint exchange-pattern="request-response" path="BP.queue.VMError" doc:name="VMError"/>		  
+			</catch-exception-strategy>   
+		</flow>
+
+
+
+</mule>
